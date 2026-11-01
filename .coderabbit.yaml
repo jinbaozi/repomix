@@ -7,15 +7,17 @@ language: en-US
 # Review configuration
 reviews:
   # Review levels for different types of changes
-  profile: chill # Options: quiet, chill, assertive
+  profile: assertive # Options: quiet, chill, assertive
 
-  # Auto review only on PR creation, not on subsequent changes
   auto_review:
     enabled: true
     drafts: false
 
-    # Disable incremental reviews after PR creation
-    auto_incremental_review: false
+    # Re-review new pushes, so a request for changes is lifted once the fixes
+    # land (auto_approvals needs the latest commit reviewed)
+    auto_incremental_review: true
+    # Never stop re-reviewing, or a late fix push could leave changes requested
+    auto_pause_after_reviewed_commits: 0
 
     # Dependency bot PRs are vetted separately before merging
     ignore_usernames:
@@ -49,6 +51,23 @@ reviews:
     # Repomix does not require docstrings
     docstrings:
       mode: 'off'
+    # Project rules from CLAUDE.md
+    custom_checks:
+      - name: Docs in all locales
+        mode: warning
+        instructions: >-
+          Pass if the PR does not add, remove, or change a user-facing feature,
+          CLI option, config option, or MCP tool parameter. Otherwise pass only if
+          the docs for that change are updated in every language directory under
+          website/client/src/, not just en.
+      - name: Tests for behavior changes
+        mode: warning
+        instructions: >-
+          Pass if the PR does not change runtime behavior in src/ (for example,
+          it only changes tests, docs, comments, CI or tooling config,
+          dependencies, formatting, or code outside src/, or it is a pure
+          refactor). Otherwise pass only if a test under tests/ is added or
+          updated to cover the changed behavior.
 
   tools:
     # Biome and oxlint already run in CI
