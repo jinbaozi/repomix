@@ -389,6 +389,31 @@ describe('remoteAction functions', () => {
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('--include "clients/client-ses/**"'));
     });
 
+    test('warns about a path in the URL when the archive download succeeds', async () => {
+      vi.mocked(fs.copyFile).mockResolvedValue(undefined);
+      const downloadGitHubArchiveMock = vi.fn(async () => {});
+
+      await runRemoteAction('https://github.com/owner/repo/tree/main/some/path', { remoteBranch: 'main' }, undefined, {
+        isGitInstalled: async () => true,
+        execGitShallowClone: vi.fn(async () => {}),
+        getRemoteRefs: async () => ['main'],
+        runDefaultAction: async () => createMockDefaultActionResult(),
+        downloadGitHubArchive: downloadGitHubArchiveMock,
+        isGitHubRepository: vi.fn().mockReturnValue(true),
+        parseGitHubRepoInfo: vi.fn().mockReturnValue({ owner: 'owner', repo: 'repo', ref: 'main/some/path' }),
+        isArchiveDownloadSupported: vi.fn().mockReturnValue(true),
+        confirmRemoteConfigTrust: vi.fn(),
+      });
+
+      expect(downloadGitHubArchiveMock).toHaveBeenCalledWith(
+        expect.objectContaining({ ref: 'main' }),
+        expect.any(String),
+        expect.any(Object),
+        expect.any(Function),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('--include "some/path/**"'));
+    });
+
     test('does not warn about a path for a plain branch URL', async () => {
       vi.mocked(fs.copyFile).mockResolvedValue(undefined);
 

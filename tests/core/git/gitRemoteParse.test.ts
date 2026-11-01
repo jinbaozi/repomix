@@ -181,6 +181,22 @@ describe('remoteAction functions', () => {
       });
     });
 
+    test('should drop the query, fragment and percent-encoding from a subpath', () => {
+      expect(parseRemoteValue('https://gitlab.com/o/r/-/blob/main/file.ts#L10-L20', ['main']).subpath).toEqual({
+        path: 'file.ts',
+        isFile: true,
+      });
+      expect(parseRemoteValue('https://github.com/o/r/tree/main/src?x=1', ['main']).subpath).toEqual({
+        path: 'src',
+        isFile: false,
+      });
+      expect(parseRemoteValue('https://github.com/o/r/tree/main/my%20dir', ['main']).subpath).toEqual({
+        path: 'my dir',
+        isFile: false,
+      });
+      expect(parseRemoteValue('https://github.com/o/r/tree/main#readme', ['main']).subpath).toBeUndefined();
+    });
+
     test('should report the path after the ref as a subpath', () => {
       expect(parseRemoteValue('https://github.com/owner/repo/tree/main/clients/client-ses', ['main'])).toEqual({
         repoUrl: 'https://github.com/owner/repo.git',

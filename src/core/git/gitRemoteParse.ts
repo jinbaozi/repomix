@@ -66,6 +66,18 @@ export const parseRemoteValue = (remoteValue: string, refs: string[] = []): Pars
   return parsed;
 };
 
+// git-url-parse keeps the URL's query/fragment (e.g. `#L10-L20` from a copied
+// blob link) and percent-encoding in `filepath`, neither of which is part of the path.
+const toSubpath = (filepath: string | undefined, filepathtype: string): Pick<ParsedRemoteValue, 'subpath'> => {
+  let path = (filepath ?? '').split(/[?#]/)[0].replace(/\/+$/, '');
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // Keep the raw path when it is not valid percent-encoding
+  }
+  return path ? { subpath: { path, isFile: filepathtype === 'blob' } } : {};
+};
+
 const parseRemoteValueInternal = (remoteValue: string, refs: string[]): ParsedRemoteValue => {
   if (isValidShorthand(remoteValue)) {
     logger.trace(`Formatting GitHub shorthand: ${remoteValue}`);
@@ -112,9 +124,7 @@ const parseRemoteValueInternal = (remoteValue: string, refs: string[]): ParsedRe
       return {
         repoUrl: repoUrl,
         remoteBranch: parsedFields.ref,
-        ...(parsedFields.filepath
-          ? { subpath: { path: parsedFields.filepath, isFile: parsedFields.filepathtype === 'blob' } }
-          : {}),
+        ...toSubpath(parsedFields.filepath, parsedFields.filepathtype),
       };
     }
 
