@@ -414,6 +414,26 @@ describe('remoteAction functions', () => {
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('--include "some/path/**"'));
     });
 
+    test('does not name a path it cannot split from an unknown ref', async () => {
+      vi.mocked(fs.copyFile).mockResolvedValue(undefined);
+
+      await runRemoteAction('https://github.com/owner/repo/blob/feature/x/a.ts', {}, undefined, {
+        isGitInstalled: async () => true,
+        execGitShallowClone: vi.fn(async () => {}),
+        getRemoteRefs: async () => ['main'],
+        runDefaultAction: async () => createMockDefaultActionResult(),
+        downloadGitHubArchive: vi.fn(async () => {}),
+        isGitHubRepository: vi.fn().mockReturnValue(true),
+        parseGitHubRepoInfo: vi.fn().mockReturnValue({ owner: 'owner', repo: 'repo' }),
+        isArchiveDownloadSupported: vi.fn().mockReturnValue(true),
+        confirmRemoteConfigTrust: vi.fn(),
+      });
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('The path in the remote URL is ignored'));
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('x/a.ts'));
+    });
+
     test('does not warn about a path for a plain branch URL', async () => {
       vi.mocked(fs.copyFile).mockResolvedValue(undefined);
 

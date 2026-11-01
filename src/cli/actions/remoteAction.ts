@@ -106,7 +106,8 @@ export const runRemoteAction = async (
         // the way ls-remote refs do on the clone path. The warning is best-effort and
         // must not fail a download that already succeeded.
         try {
-          warnIgnoredRemoteSubpath(parseRemoteValue(repoUrl, repoInfoWithBranch.ref ? [repoInfoWithBranch.ref] : []));
+          const archiveRefs = repoInfoWithBranch.ref ? [repoInfoWithBranch.ref] : [];
+          warnIgnoredRemoteSubpath(parseRemoteValue(repoUrl, archiveRefs), archiveRefs);
         } catch (error) {
           logger.trace('Failed to check the remote URL for a path:', (error as Error).message);
         }
@@ -238,8 +239,18 @@ export const runRemoteAction = async (
  * A /tree/<ref>/<path> or /blob/<ref>/<path> URL still downloads and packs the
  * whole repository, so say so instead of silently dropping the path (#433).
  */
-const warnIgnoredRemoteSubpath = ({ subpath }: ParsedRemoteValue): void => {
+const warnIgnoredRemoteSubpath = ({ subpath, remoteBranch }: ParsedRemoteValue, knownRefs: string[]): void => {
   if (!subpath) {
+    return;
+  }
+  // Without a known ref, git-url-parse guesses the first segment is the ref, so a
+  // branch like `feature/x` would leave `x/...` in the path. Do not name a path
+  // (or suggest an --include) that may be wrong.
+  if (!remoteBranch || !knownRefs.includes(remoteBranch)) {
+    logger.warn(
+      'The path in the remote URL is ignored, and the whole repository will be packed.\n' +
+        'To pack only part of it, use --include.',
+    );
     return;
   }
   const includePattern = subpath.isFile ? subpath.path : `${subpath.path}/**`;
@@ -278,7 +289,7 @@ const performGitClone = async (
 
   // Parse the remote URL with the refs information
   const parsedFields = parseRemoteValue(repoUrl, refs);
-  warnIgnoredRemoteSubpath(parsedFields);
+  warnIgnoredRemoteSubpath(parsedFields, refs);
 
   const spinner = new Spinner('Cloning repository...', cliOptions);
 
