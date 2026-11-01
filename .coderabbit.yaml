@@ -22,8 +22,10 @@ reviews:
       - renovate[bot]
       - dependabot[bot]
 
-  # Request changes for critical issues
-  request_changes_workflow: true
+  # Request changes for critical issues, approve once they are resolved
+  # (formerly request_changes_workflow)
+  auto_approvals:
+    enabled: true
 
   # High-level summary for complex PRs
   high_level_summary: false
@@ -39,9 +41,8 @@ reviews:
   suggested_reviewers: false
   in_progress_fortune: false
 
-  # Generated files and lockfiles
+  # Lockfiles
   path_filters:
-    - '!website/client/src/public/schemas/**'
     - '!**/package-lock.json'
 
   pre_merge_checks:
