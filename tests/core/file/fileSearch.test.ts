@@ -287,7 +287,7 @@ temp-files/
       expect(patterns).toContain('**/temp-files/');
     });
 
-    test('should not apply git depth semantics to anchored exclude patterns', async () => {
+    test('should keep anchored exclude patterns anchored and skip negated ones', async () => {
       const mockConfig = createMockConfig({
         ignore: {
           useGitignore: true,
@@ -299,6 +299,7 @@ temp-files/
       const mockExcludeContent = `
 /nested/secret.txt
 nested/other.txt
+!nested/keep.txt
 `;
 
       vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
@@ -311,42 +312,12 @@ nested/other.txt
 
       const patterns = await getIgnorePatterns('/mock/root', mockConfig);
 
-      // Patterns carrying a slash are anchored to the repository root, so they stay as-is.
+      // Patterns carrying a slash are anchored to the repository root, so they gain no
+      // `**/` prefix. Negations would exclude instead of re-include, so they are dropped.
       expect(patterns).toContain('nested/secret.txt');
       expect(patterns).toContain('nested/other.txt');
+      expect(patterns.some((pattern) => pattern.includes('keep.txt'))).toBe(false);
       expect(patterns).not.toContain('**/nested/secret.txt');
-    });
-
-    test('should leave an exclude file that contains negations untouched', async () => {
-      const mockConfig = createMockConfig({
-        ignore: {
-          useGitignore: true,
-          useDefaultPatterns: false,
-          customPatterns: [],
-        },
-      });
-
-      const mockExcludeContent = `
-*.log
-!important.log
-`;
-
-      vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
-        const excludePath = path.join('.git', 'info', 'exclude');
-        if (filePath.toString().endsWith(excludePath)) {
-          return mockExcludeContent;
-        }
-        return '';
-      });
-
-      const patterns = await getIgnorePatterns('/mock/root', mockConfig);
-
-      // globby's `ignore` cannot re-include, so `!important.log` is inert today either way.
-      // Lifting `*.log` beside it would additionally hide `nested/important.log`, which Git
-      // packs, so the whole rule set keeps its current meaning instead.
-      expect(patterns).toContain('*.log');
-      expect(patterns).toContain('!important.log');
-      expect(patterns).not.toContain('**/*.log');
     });
 
     test('should ignore numbered split output files without excluding similarly named files', async () => {
@@ -430,10 +401,6 @@ node_modules
       expect(gitExcludePatternToGlob('nested/secret.txt')).toBe('nested/secret.txt');
       expect(gitExcludePatternToGlob('/secret.txt')).toBe('secret.txt');
       expect(gitExcludePatternToGlob('/nested/secret.txt')).toBe('nested/secret.txt');
-    });
-
-    test('should leave negations untouched', () => {
-      expect(gitExcludePatternToGlob('!secret.txt')).toBe('!secret.txt');
     });
   });
 

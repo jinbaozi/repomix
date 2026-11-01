@@ -410,14 +410,11 @@ export const parseIgnoreContent = (content: string): string[] => {
 // whereas globby matches a bare pattern only at the top level of `cwd`. Without this,
 // `secret.txt` in .git/info/exclude leaves `sub/secret.txt` packed, even though the
 // identical pattern in .gitignore is respected at depth by globby's gitignore support.
+// Negations are skipped by the caller and never reach here.
 export const gitExcludePatternToGlob = (pattern: string): string => {
-  // Negations carry the opposite polarity of everything here, so leave them alone.
-  if (pattern.startsWith('!')) {
-    return pattern;
-  }
-
-  // A leading slash anchors the pattern to the exclude file's directory, which is
-  // already globby's base, so it only needs dropping.
+  // A leading or inner slash anchors the pattern to the repository root. The exclude
+  // file is only read from `rootDir/.git`, so that root is globby's base: an inner-slash
+  // pattern already matches as-is, and a leading slash only needs dropping.
   if (pattern.startsWith('/')) {
     return pattern.slice(1);
   }
@@ -573,13 +570,15 @@ export const getIgnorePatterns = async (rootDir: string, config: RepomixConfigMe
     try {
       const excludeFileContent = await fs.readFile(excludeFilePath, 'utf8');
       const excludePatterns = parseIgnoreContent(excludeFileContent);
-      // globby's `ignore` list has no re-inclusion: every entry excludes, so a negation there
-      // is inert and only hides files. Lifting positives to any depth next to such a negation
-      // would hide a nested file Git packs, so keep the previous patterns for those rule sets.
-      const hasNegation = excludePatterns.some((pattern) => pattern.startsWith('!'));
 
       for (const pattern of excludePatterns) {
-        ignorePatterns.add(hasNegation ? pattern : gitExcludePatternToGlob(pattern));
+        // Skipped for the same reason as custom negations above. Git has no extglob, so
+        // every leading `!` here is a negation, `!(...)` included.
+        if (pattern.startsWith('!')) {
+          warnNegatedIgnorePatternOnce(pattern);
+          continue;
+        }
+        ignorePatterns.add(gitExcludePatternToGlob(pattern));
       }
     } catch (error) {
       // File might not exist or might not be accessible, which is fine
