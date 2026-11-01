@@ -54,7 +54,8 @@ export interface ParsedRemoteValue {
   remoteBranch: string | undefined;
   // Path after the ref in a /tree/ or /blob/ URL (e.g. `clients/client-ses`).
   // Repomix packs the whole repository, so callers only use this to warn.
-  subpath?: { path: string; isFile: boolean };
+  // `kind` is unknown when the URL does not say (e.g. Bitbucket /src/).
+  subpath?: { path: string; kind: 'file' | 'directory' | 'unknown' };
 }
 
 export const parseRemoteValue = (remoteValue: string, refs: string[] = []): ParsedRemoteValue => {
@@ -66,16 +67,48 @@ export const parseRemoteValue = (remoteValue: string, refs: string[] = []): Pars
   return parsed;
 };
 
-// git-url-parse keeps the URL's query/fragment (e.g. `#L10-L20` from a copied
-// blob link) and percent-encoding in `filepath`, neither of which is part of the path.
-const toSubpath = (filepath: string | undefined, filepathtype: string): Pick<ParsedRemoteValue, 'subpath'> => {
-  let path = (filepath ?? '').split(/[?#]/)[0].replace(/\/+$/, '');
-  try {
-    path = decodeURIComponent(path);
-  } catch {
-    // Keep the raw path when it is not valid percent-encoding
+const SUBPATH_KINDS: Record<string, 'file' | 'directory'> = { tree: 'directory', blob: 'file', raw: 'file' };
+
+// git-url-parse's `filepath` cannot be used as-is: it keeps the query and fragment
+// (`?private_token=...`, `#L10`), keeps percent-encoding, and locates the ref by its
+// first occurrence, so an owner or repository named like the ref shifts the path.
+// Instead, find `<filepathtype>/<ref>/` in the URL pathname and take what follows.
+const extractSubpath = (
+  remoteValue: string,
+  ref: string,
+  filepathtype: string | undefined,
+): Pick<ParsedRemoteValue, 'subpath'> => {
+  if (!filepathtype) {
+    return {};
   }
-  return path ? { subpath: { path, isFile: filepathtype === 'blob' } } : {};
+  let segments: string[];
+  try {
+    segments = new URL(remoteValue).pathname.split('/').filter(Boolean);
+  } catch {
+    return {};
+  }
+  const refSegments = ref.split('/');
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i] !== filepathtype) {
+      continue;
+    }
+    const refEnd = i + 1 + refSegments.length;
+    if (segments.slice(i + 1, refEnd).join('/') !== ref) {
+      continue;
+    }
+    const rawPath = segments.slice(refEnd).join('/');
+    if (!rawPath) {
+      return {};
+    }
+    let path = rawPath;
+    try {
+      path = decodeURIComponent(rawPath);
+    } catch {
+      // Keep the raw path when it is not valid percent-encoding
+    }
+    return { subpath: { path, kind: SUBPATH_KINDS[filepathtype] ?? 'unknown' } };
+  }
+  return {};
 };
 
 const parseRemoteValueInternal = (remoteValue: string, refs: string[]): ParsedRemoteValue => {
@@ -124,7 +157,7 @@ const parseRemoteValueInternal = (remoteValue: string, refs: string[]): ParsedRe
       return {
         repoUrl: repoUrl,
         remoteBranch: parsedFields.ref,
-        ...toSubpath(parsedFields.filepath, parsedFields.filepathtype),
+        ...extractSubpath(remoteValue, parsedFields.ref, parsedFields.filepathtype),
       };
     }
 

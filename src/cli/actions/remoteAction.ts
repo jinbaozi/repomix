@@ -253,7 +253,11 @@ const warnIgnoredRemoteSubpath = ({ subpath, remoteBranch }: ParsedRemoteValue, 
     );
     return;
   }
-  const includePattern = subpath.isFile ? subpath.path : `${subpath.path}/**`;
+  const includePattern = {
+    file: subpath.path,
+    directory: `${subpath.path}/**`,
+    unknown: `${subpath.path},${subpath.path}/**`,
+  }[subpath.kind];
   logger.warn(
     `The path "${subpath.path}" in the remote URL is ignored, and the whole repository will be packed.\n` +
       `To pack only that path, add: --include "${includePattern}"`,
