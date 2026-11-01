@@ -460,6 +460,24 @@ describe('remoteAction functions', () => {
       expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('--include "'));
     });
 
+    test('suggests --include for paths with route-group parentheses and brackets', async () => {
+      vi.mocked(fs.copyFile).mockResolvedValue(undefined);
+
+      await runRemoteAction('https://github.com/owner/repo/tree/main/app/(marketing)/[slug]', {}, undefined, {
+        isGitInstalled: async () => true,
+        execGitShallowClone: vi.fn(async () => {}),
+        getRemoteRefs: async () => ['main'],
+        runDefaultAction: async () => createMockDefaultActionResult(),
+        downloadGitHubArchive: vi.fn(),
+        isGitHubRepository: vi.fn().mockReturnValue(false),
+        parseGitHubRepoInfo: vi.fn().mockReturnValue(null),
+        isArchiveDownloadSupported: vi.fn().mockReturnValue(false),
+        confirmRemoteConfigTrust: vi.fn(),
+      });
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('--include "app/(marketing)/[slug]/**"'));
+    });
+
     test('does not warn about a path for a plain branch URL', async () => {
       vi.mocked(fs.copyFile).mockResolvedValue(undefined);
 
