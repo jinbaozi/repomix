@@ -1,5 +1,5 @@
 # CodeRabbit configuration file for Repomix project
-# See: https://docs.coderabbit.ai/getting-started/configure-coderabbit/
+# See: https://docs.coderabbit.ai/reference/configuration
 
 # Language configuration
 language: en-US
@@ -7,7 +7,7 @@ language: en-US
 # Review configuration
 reviews:
   # Review levels for different types of changes
-  profile: chill # Options: chill, assertive
+  profile: chill # Options: quiet, chill, assertive
 
   # Auto review only on PR creation, not on subsequent changes
   auto_review:
@@ -17,14 +17,52 @@ reviews:
     # Disable incremental reviews after PR creation
     auto_incremental_review: false
 
-  # Request changes for critical issues
-  request_changes_workflow: true
+    # Dependency bot PRs are vetted separately before merging
+    ignore_usernames:
+      - renovate[bot]
+      - dependabot[bot]
+
+  # Request changes for critical issues, approve once they are resolved
+  # (formerly request_changes_workflow)
+  auto_approvals:
+    enabled: true
 
   # High-level summary for complex PRs
   high_level_summary: false
 
   # Poem style for fun summary (optional)
   poem: false
+
+  # Keep the walkthrough short
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+
+  # Lockfiles
+  path_filters:
+    - '!**/package-lock.json'
+
+  pre_merge_checks:
+    # Repomix does not require docstrings
+    docstrings:
+      mode: 'off'
+
+  tools:
+    # Biome and oxlint already run in CI
+    biome:
+      enabled: false
+    oxc:
+      enabled: false
+    # Prose linters are noisy on the docs in 15 languages
+    languagetool:
+      enabled: false
+    vale:
+      enabled: false
+    markdownlint:
+      enabled: false
 
 # Chat configuration
 chat:
