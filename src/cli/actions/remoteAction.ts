@@ -5,11 +5,18 @@ import pc from 'picocolors';
 import { execGitShallowClone } from '../../core/git/gitCommand.js';
 import { downloadGitHubArchive, isArchiveDownloadSupported } from '../../core/git/gitHubArchive.js';
 import { getRemoteRefs } from '../../core/git/gitRemoteHandle.js';
-import { isGitHubRepository, parseGitHubRepoInfo, parseRemoteValue } from '../../core/git/gitRemoteParse.js';
+import {
+  isGitHubRepository,
+  type ParsedRemoteValue,
+  parseGitHubRepoInfo,
+  parseRemoteValue,
+} from '../../core/git/gitRemoteParse.js';
 import { isGitInstalled } from '../../core/git/gitRepositoryHandle.js';
 import { generateDefaultSkillNameFromUrl, generateProjectNameFromUrl } from '../../core/skill/skillUtils.js';
 import { RepomixError } from '../../shared/errorHandle.js';
 import { logger } from '../../shared/logger.js';
+import { createSafeProgressCallback } from '../../shared/progressCallback.js';
+import type { RepomixProgressCallback } from '../../shared/types.js';
 import { redactErrorMessage, redactUrl } from '../../shared/urlRedact.js';
 import { Spinner } from '../cliSpinner.js';
 import { validateTokenBudget } from '../cliTokenBudget.js';
@@ -21,6 +28,7 @@ import { type DefaultActionRunnerResult, runDefaultAction } from './defaultActio
 export const runRemoteAction = async (
   repoUrl: string,
   cliOptions: CliOptions,
+  progressCallback?: RepomixProgressCallback,
   deps = {
     isGitInstalled,
     execGitShallowClone,
@@ -33,6 +41,9 @@ export const runRemoteAction = async (
     confirmRemoteConfigTrust,
   },
 ): Promise<DefaultActionRunnerResult> => {
+  const reportProgress = createSafeProgressCallback(progressCallback);
+  const { signal } = cliOptions;
+
   // Validate --config path before any expensive operations (download/clone):
   // only absolute paths are allowed to prevent loading config from the cloned repository
   if (cliOptions.config && !path.isAbsolute(cliOptions.config)) {
@@ -58,6 +69,7 @@ export const runRemoteAction = async (
 
       try {
         spinner.start();
+        reportProgress('Downloading repository archive...');
 
         // Override ref with CLI option if provided
         const repoInfoWithBranch = {
@@ -71,22 +83,40 @@ export const runRemoteAction = async (
           {
             timeout: 60000, // 1 minute timeout for large repos
             retries: 2,
+            signal,
           },
           (progress) => {
+            let message: string;
             if (progress.percentage !== null) {
-              spinner.update(`Downloading repository archive... (${progress.percentage}%)`);
+              message = `Downloading repository archive... (${progress.percentage}%)`;
             } else {
               // Show downloaded bytes when percentage is not available
               const downloadedMB = (progress.downloaded / 1024 / 1024).toFixed(1);
-              spinner.update(`Downloading repository archive... (${downloadedMB} MB)`);
+              message = `Downloading repository archive... (${downloadedMB} MB)`;
             }
+            spinner.update(message);
+            reportProgress(message);
           },
         );
 
         downloadMethod = 'archive';
         spinner.succeed('Repository archive downloaded successfully!');
         logger.log('');
+        // The archive ref is known to exist, so it splits the URL into ref and path
+        // the way ls-remote refs do on the clone path. The warning is best-effort and
+        // must not fail a download that already succeeded.
+        try {
+          const archiveRefs = repoInfoWithBranch.ref ? [repoInfoWithBranch.ref] : [];
+          warnIgnoredRemoteSubpath(parseRemoteValue(repoUrl, archiveRefs), archiveRefs);
+        } catch (error) {
+          logger.trace('Failed to check the remote URL for a path:', (error as Error).message);
+        }
       } catch (archiveError) {
+        // A cancelled download must not fall back to cloning.
+        if (signal?.aborted) {
+          spinner.fail('Repository download cancelled');
+          throw signal.reason;
+        }
         spinner.fail('Archive download failed, trying git clone...');
         logger.trace('Archive download error:', (archiveError as Error).message);
 
@@ -95,12 +125,12 @@ export const runRemoteAction = async (
         tempDirPath = await createTempDirectory();
 
         // Fall back to git clone
-        await performGitClone(repoUrl, tempDirPath, cliOptions, deps);
+        await performGitClone(repoUrl, tempDirPath, cliOptions, deps, reportProgress);
         downloadMethod = 'git';
       }
     } else {
       // Use git clone directly
-      await performGitClone(repoUrl, tempDirPath, cliOptions, deps);
+      await performGitClone(repoUrl, tempDirPath, cliOptions, deps, reportProgress);
       downloadMethod = 'git';
     }
 
@@ -179,7 +209,7 @@ export const runRemoteAction = async (
       // runDefaultAction and the temp dir (with the output) would be cleaned up.
       deferTokenBudgetCheck: true,
     };
-    result = await deps.runDefaultAction([tempDirPath], tempDirPath, optionsWithSkill);
+    result = await deps.runDefaultAction([tempDirPath], tempDirPath, optionsWithSkill, progressCallback);
 
     // Copy output to current directory (only for non-skill generation)
     // Skip copy for stdout mode (output goes directly to stdout)
@@ -205,6 +235,43 @@ export const runRemoteAction = async (
   return result;
 };
 
+// Characters that would break the quoted --include suggestion (quotes, shell
+// expansion, the comma separator, glob syntax) or the terminal (control codes).
+// `()` and `[]` are fine: --include escapes them, and they are inert in double
+// quotes, so Next.js paths like `app/(marketing)/[slug]` still get a suggestion.
+const UNSAFE_SUGGESTION_CHARS = /["'`$\\,*?{}!;&|<>]/;
+const isUnsafeForSuggestion = (path: string): boolean =>
+  UNSAFE_SUGGESTION_CHARS.test(path) || [...path].some((char) => char.charCodeAt(0) < 0x20 || char === '\x7f');
+
+/**
+ * A /tree/<ref>/<path> or /blob/<ref>/<path> URL still downloads and packs the
+ * whole repository, so say so instead of silently dropping the path (#433).
+ */
+const warnIgnoredRemoteSubpath = ({ subpath, remoteBranch }: ParsedRemoteValue, knownRefs: string[]): void => {
+  if (!subpath) {
+    return;
+  }
+  // Without a known ref, git-url-parse guesses the first segment is the ref, so a
+  // branch like `feature/x` would leave `x/...` in the path. Do not name a path
+  // (or suggest an --include) that may be wrong, or one that cannot be echoed safely.
+  if (!remoteBranch || !knownRefs.includes(remoteBranch) || isUnsafeForSuggestion(subpath.path)) {
+    logger.warn(
+      'The path in the remote URL is ignored, and the whole repository will be packed.\n' +
+        'To pack only part of it, use --include.',
+    );
+    return;
+  }
+  const includePattern = {
+    file: subpath.path,
+    directory: `${subpath.path}/**`,
+    unknown: `${subpath.path},${subpath.path}/**`,
+  }[subpath.kind];
+  logger.warn(
+    `The path "${subpath.path}" in the remote URL is ignored, and the whole repository will be packed.\n` +
+      `To pack only that path, add: --include "${includePattern}"`,
+  );
+};
+
 /**
  * Performs git clone operation with spinner and error handling
  */
@@ -217,6 +284,7 @@ const performGitClone = async (
     getRemoteRefs: typeof getRemoteRefs;
     execGitShallowClone: typeof execGitShallowClone;
   },
+  reportProgress: (message: string) => void = () => {},
 ): Promise<void> => {
   // Check if git is installed only when we actually need to use git
   if (!(await deps.isGitInstalled())) {
@@ -233,16 +301,24 @@ const performGitClone = async (
 
   // Parse the remote URL with the refs information
   const parsedFields = parseRemoteValue(repoUrl, refs);
+  warnIgnoredRemoteSubpath(parsedFields, refs);
 
   const spinner = new Spinner('Cloning repository...', cliOptions);
 
   try {
     spinner.start();
+    reportProgress('Cloning repository...');
 
     // Clone the repository
-    await cloneRepository(parsedFields.repoUrl, tempDirPath, cliOptions.remoteBranch || parsedFields.remoteBranch, {
-      execGitShallowClone: deps.execGitShallowClone,
-    });
+    await cloneRepository(
+      parsedFields.repoUrl,
+      tempDirPath,
+      cliOptions.remoteBranch || parsedFields.remoteBranch,
+      {
+        execGitShallowClone: deps.execGitShallowClone,
+      },
+      cliOptions.signal,
+    );
 
     spinner.succeed('Repository cloned successfully!');
     logger.log('');
@@ -265,13 +341,15 @@ export const cloneRepository = async (
   deps = {
     execGitShallowClone,
   },
+  signal?: AbortSignal,
 ): Promise<void> => {
   logger.log(`Clone repository: ${redactUrl(url)} to temporary directory. ${pc.dim(`path: ${directory}`)}`);
   logger.log('');
 
   try {
-    await deps.execGitShallowClone(url, directory, remoteBranch);
+    await deps.execGitShallowClone(url, directory, remoteBranch, undefined, signal);
   } catch (error) {
+    signal?.throwIfAborted();
     throw new RepomixError(`Failed to clone repository: ${redactErrorMessage(error)}`);
   }
 };

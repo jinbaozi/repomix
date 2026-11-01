@@ -13,6 +13,23 @@ import { sortPaths } from './filePathSort.js';
 
 import { checkDirectoryPermissions, PermissionError } from './permissionCheck.js';
 
+// A leading `!` marks a negation; `\!` is an escaped literal `!` and is not one. Like fast-glob,
+// `!(...)` is an extglob (e.g. `!(*.ts)`) that already works as an ignore pattern, not a negation.
+export const isNegatedIgnorePattern = (pattern: string): boolean => pattern.startsWith('!') && pattern[1] !== '(';
+
+// getIgnorePatterns runs several times per run, so warn once per distinct pattern per process.
+const warnedNegatedPatterns = new Set<string>();
+
+const warnNegatedIgnorePatternOnce = (pattern: string): void => {
+  if (warnedNegatedPatterns.has(pattern)) {
+    return;
+  }
+  warnedNegatedPatterns.add(pattern);
+  logger.warn(
+    `Negated ignore pattern "${pattern}" is not supported yet and was skipped. See https://github.com/yamadashy/repomix/issues/400`,
+  );
+};
+
 export interface FileSearchResult {
   filePaths: string[];
   emptyDirPaths: string[];
@@ -23,6 +40,11 @@ export interface FileSearchResult {
 // descriptor exhaustion that unbounded `Promise.all` could cause.
 const EMPTY_DIR_CHECK_CONCURRENCY = 20;
 const IGNORE_CONTROL_FILE_NAMES = new Set(['.gitignore', '.ignore', '.repomixignore']);
+
+// Whether a path is an ignore-control file whose rules globby loads. Such files must stay
+// visible to the ignore machinery even when an ignore pattern also matches them.
+export const isIgnoreControlFile = (filePath: string): boolean =>
+  IGNORE_CONTROL_FILE_NAMES.has(path.posix.basename(filePath.replace(/\\/g, '/')));
 
 // No per-directory ignore-pattern check is needed here. The `directories` array
 // comes from globby with the same `ignore` patterns (e.g. `dist/**`), which
@@ -87,6 +109,25 @@ export const normalizeGlobPattern = (pattern: string): string => {
   }
 
   return pattern;
+};
+
+/**
+ * Normalizes an ignore pattern into the globby/minimatch patterns that implement it.
+ *
+ * `normalizeGlobPattern` turns `**\/name` into `**\/name/**`. For a literal name that
+ * still excludes a file called `name`, but when the last segment has a wildcard
+ * (`**\/npm-debug.log*`, `**\/repomix-output.*`, `**\/.*`) the `/**` form only matches
+ * directory contents, so files like `npm-debug.log.1` slipped through. Such patterns
+ * also keep their bare form, which excludes the matching files. The `/**` form stays,
+ * so nothing excluded today becomes included.
+ */
+export const expandIgnorePattern = (pattern: string): string[] => {
+  const normalized = normalizeGlobPattern(pattern);
+  const lastSegment = pattern.slice(pattern.lastIndexOf('/') + 1);
+  if (normalized === `${pattern}/**` && /[*?[{]/.test(lastSegment)) {
+    return [pattern, normalized];
+  }
+  return [normalized];
 };
 
 const toPosixPath = (value: string): string => value.replace(/\\/g, '/');
@@ -200,7 +241,7 @@ export const searchFiles = async (
         logger.trace('[stdin mode] Explicit files (absolute):', explicitFiles);
 
         const relativePaths = explicitFiles.map((filePath) => {
-          const relativePath = path.relative(rootDir, filePath);
+          const relativePath = path.relative(rootDir, filePath).split(path.sep).join('/');
           // Escape the path to handle special characters
           return escapeGlobPattern(relativePath);
         });
@@ -415,7 +456,7 @@ const prepareIgnoreContext = async (
   }
 
   // Normalize ignore patterns to handle trailing slashes consistently
-  const normalizedIgnorePatterns = globbyIgnorePatterns.map(normalizeGlobPattern);
+  const normalizedIgnorePatterns = globbyIgnorePatterns.flatMap(expandIgnorePattern);
 
   // Check if .git is a worktree reference
   const gitPath = path.join(rootDir, '.git');
@@ -466,6 +507,8 @@ export const getIgnoreFilePatterns = async (config: RepomixConfigMerged): Promis
   //
   // .gitignore files are handled by globby's gitignore option (not ignoreFiles)
   // to properly respect parent directory .gitignore files, matching Git's behavior.
+  //
+  // These ignore files apply whether or not customPatterns is defined in the config.
 
   if (config.ignore.useDotIgnore) {
     ignoreFilePatterns.push('**/.ignore');
@@ -498,12 +541,27 @@ export const getIgnorePatterns = async (rootDir: string, config: RepomixConfigMe
     logger.trace('Adding output file to ignore patterns:', relativeToTargetPath);
 
     ignorePatterns.add(relativeToTargetPath);
+
+    if (config.output.splitOutput) {
+      const extension = path.posix.extname(relativeToTargetPath);
+      const outputBasePath = extension ? relativeToTargetPath.slice(0, -extension.length) : relativeToTargetPath;
+      // Part numbers start at 1 with no zero padding (buildSplitOutputFilePath), so names
+      // such as `out.0.xml` or `out.01.xml` are user files and must stay packed.
+      const splitOutputPattern = `${escapeGlobPattern(outputBasePath)}.[1-9]*([0-9])${escapeGlobPattern(extension)}`;
+      ignorePatterns.add(splitOutputPattern);
+    }
   }
 
   // Add custom ignore patterns
   if (config.ignore.customPatterns) {
     logger.trace('Adding custom ignore patterns:', config.ignore.customPatterns);
     for (const pattern of config.ignore.customPatterns) {
+      // fast-glob does not treat a leading `!` in its ignore list as re-inclusion and would
+      // exclude the matching files instead. Skip negations until proper support lands (#400).
+      if (isNegatedIgnorePattern(pattern)) {
+        warnNegatedIgnorePatternOnce(pattern);
+        continue;
+      }
       ignorePatterns.add(pattern);
     }
   }
