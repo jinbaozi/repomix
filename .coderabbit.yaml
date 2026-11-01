@@ -9,13 +9,13 @@ reviews:
   # Review levels for different types of changes
   profile: chill # Options: quiet, chill, assertive
 
-  # Auto review only on PR creation, not on subsequent changes
   auto_review:
     enabled: true
     drafts: false
 
-    # Disable incremental reviews after PR creation
-    auto_incremental_review: false
+    # Re-review new pushes, so a request for changes is lifted once the fixes
+    # land (auto_approvals needs the latest commit reviewed)
+    auto_incremental_review: true
 
     # Dependency bot PRs are vetted separately before merging
     ignore_usernames:
