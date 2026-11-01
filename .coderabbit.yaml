@@ -7,7 +7,7 @@ language: en-US
 # Review configuration
 reviews:
   # Review levels for different types of changes
-  profile: chill # Options: quiet, chill, assertive
+  profile: assertive # Options: quiet, chill, assertive
 
   auto_review:
     enabled: true
@@ -49,6 +49,21 @@ reviews:
     # Repomix does not require docstrings
     docstrings:
       mode: 'off'
+    # Project rules from CLAUDE.md
+    custom_checks:
+      - name: Docs in all locales
+        mode: warning
+        instructions: >-
+          Pass if the PR does not add, remove, or change a user-facing CLI option,
+          config option, or MCP tool parameter. Otherwise pass only if the docs for
+          that change are updated in every language directory under
+          website/client/src/, not just en.
+      - name: Tests for behavior changes
+        mode: warning
+        instructions: >-
+          Pass if the PR only changes docs, comments, CI, dependencies, or
+          formatting. Otherwise pass only if a test under tests/ is added or
+          updated to cover the changed behavior in src/.
 
   tools:
     # Biome and oxlint already run in CI
