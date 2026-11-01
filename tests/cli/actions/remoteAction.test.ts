@@ -363,6 +363,50 @@ describe('remoteAction functions', () => {
       expect(execGitShallowCloneMock).toHaveBeenCalledTimes(1);
     });
 
+    test('warns that a path in a /tree/ URL is ignored and clones the branch', async () => {
+      const execGitShallowCloneMock = vi.fn(async () => {});
+      vi.mocked(fs.copyFile).mockResolvedValue(undefined);
+
+      await runRemoteAction('https://github.com/owner/repo/tree/main/clients/client-ses', {}, undefined, {
+        isGitInstalled: async () => true,
+        execGitShallowClone: execGitShallowCloneMock,
+        getRemoteRefs: async () => ['main'],
+        runDefaultAction: async () => createMockDefaultActionResult(),
+        downloadGitHubArchive: vi.fn(),
+        isGitHubRepository: vi.fn().mockReturnValue(false),
+        parseGitHubRepoInfo: vi.fn().mockReturnValue(null),
+        isArchiveDownloadSupported: vi.fn().mockReturnValue(false),
+        confirmRemoteConfigTrust: vi.fn(),
+      });
+
+      expect(execGitShallowCloneMock).toHaveBeenCalledWith(
+        'https://github.com/owner/repo.git',
+        expect.any(String),
+        'main',
+        undefined,
+        undefined,
+      );
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('--include "clients/client-ses/**"'));
+    });
+
+    test('does not warn about a path for a plain branch URL', async () => {
+      vi.mocked(fs.copyFile).mockResolvedValue(undefined);
+
+      await runRemoteAction('https://github.com/owner/repo/tree/main', {}, undefined, {
+        isGitInstalled: async () => true,
+        execGitShallowClone: vi.fn(async () => {}),
+        getRemoteRefs: async () => ['main'],
+        runDefaultAction: async () => createMockDefaultActionResult(),
+        downloadGitHubArchive: vi.fn(),
+        isGitHubRepository: vi.fn().mockReturnValue(false),
+        parseGitHubRepoInfo: vi.fn().mockReturnValue(null),
+        isArchiveDownloadSupported: vi.fn().mockReturnValue(false),
+        confirmRemoteConfigTrust: vi.fn(),
+      });
+
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
     test('does not fall back to git clone when the archive download is cancelled', async () => {
       const controller = new AbortController();
       let tempDirPath = '';

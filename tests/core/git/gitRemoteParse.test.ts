@@ -181,6 +181,24 @@ describe('remoteAction functions', () => {
       });
     });
 
+    test('should report the path after the ref as a subpath', () => {
+      expect(parseRemoteValue('https://github.com/owner/repo/tree/main/clients/client-ses', ['main'])).toEqual({
+        repoUrl: 'https://github.com/owner/repo.git',
+        remoteBranch: 'main',
+        subpath: { path: 'clients/client-ses', isFile: false },
+      });
+      expect(parseRemoteValue('https://github.com/owner/repo/blob/main/src/index.ts', ['main'])).toEqual({
+        repoUrl: 'https://github.com/owner/repo.git',
+        remoteBranch: 'main',
+        subpath: { path: 'src/index.ts', isFile: true },
+      });
+      expect(parseRemoteValue('https://github.com/owner/repo/tree/feature/x/docs', ['main', 'feature/x'])).toEqual({
+        repoUrl: 'https://github.com/owner/repo.git',
+        remoteBranch: 'feature/x',
+        subpath: { path: 'docs', isFile: false },
+      });
+    });
+
     test('should get correct commit hash from url', () => {
       expect(
         parseRemoteValue(

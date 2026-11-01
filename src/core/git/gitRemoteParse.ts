@@ -49,10 +49,15 @@ const isAzureDevOpsUrl = (remoteValue: string): boolean => {
   }
 };
 
-export const parseRemoteValue = (
-  remoteValue: string,
-  refs: string[] = [],
-): { repoUrl: string; remoteBranch: string | undefined } => {
+export interface ParsedRemoteValue {
+  repoUrl: string;
+  remoteBranch: string | undefined;
+  // Path after the ref in a /tree/ or /blob/ URL (e.g. `clients/client-ses`).
+  // Repomix packs the whole repository, so callers only use this to warn.
+  subpath?: { path: string; isFile: boolean };
+}
+
+export const parseRemoteValue = (remoteValue: string, refs: string[] = []): ParsedRemoteValue => {
   // Check the input and the resolved URL: shorthand expansion and git-url-parse
   // normalization can both change the host git will actually contact.
   assertNotMetadataEndpoint(remoteValue);
@@ -61,10 +66,7 @@ export const parseRemoteValue = (
   return parsed;
 };
 
-const parseRemoteValueInternal = (
-  remoteValue: string,
-  refs: string[],
-): { repoUrl: string; remoteBranch: string | undefined } => {
+const parseRemoteValueInternal = (remoteValue: string, refs: string[]): ParsedRemoteValue => {
   if (isValidShorthand(remoteValue)) {
     logger.trace(`Formatting GitHub shorthand: ${remoteValue}`);
     return {
@@ -110,6 +112,9 @@ const parseRemoteValueInternal = (
       return {
         repoUrl: repoUrl,
         remoteBranch: parsedFields.ref,
+        ...(parsedFields.filepath
+          ? { subpath: { path: parsedFields.filepath, isFile: parsedFields.filepathtype === 'blob' } }
+          : {}),
       };
     }
 

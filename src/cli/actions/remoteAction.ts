@@ -251,6 +251,17 @@ const performGitClone = async (
   // Parse the remote URL with the refs information
   const parsedFields = parseRemoteValue(repoUrl, refs);
 
+  // A /tree/<ref>/<path> URL still clones and packs the whole repository, so say
+  // so instead of silently dropping the path (#433).
+  if (parsedFields.subpath) {
+    const { path: subpath, isFile } = parsedFields.subpath;
+    const includePattern = isFile ? subpath : `${subpath}/**`;
+    logger.warn(
+      `The path "${subpath}" in the remote URL is ignored, and the whole repository will be packed.\n` +
+        `To pack only that path, add: --include "${includePattern}"`,
+    );
+  }
+
   const spinner = new Spinner('Cloning repository...', cliOptions);
 
   try {
