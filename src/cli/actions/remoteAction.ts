@@ -237,7 +237,9 @@ export const runRemoteAction = async (
 
 // Characters that would break the quoted --include suggestion (quotes, shell
 // expansion, the comma separator, glob syntax) or the terminal (control codes).
-const UNSAFE_SUGGESTION_CHARS = /["'`$\\,*?[\]{}()!;&|<>]/;
+// `()` and `[]` are fine: --include escapes them, and they are inert in double
+// quotes, so Next.js paths like `app/(marketing)/[slug]` still get a suggestion.
+const UNSAFE_SUGGESTION_CHARS = /["'`$\\,*?{}!;&|<>]/;
 const isUnsafeForSuggestion = (path: string): boolean =>
   UNSAFE_SUGGESTION_CHARS.test(path) || [...path].some((char) => char.charCodeAt(0) < 0x20 || char === '\x7f');
 
