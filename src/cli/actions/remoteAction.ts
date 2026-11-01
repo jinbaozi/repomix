@@ -235,6 +235,12 @@ export const runRemoteAction = async (
   return result;
 };
 
+// Characters that would break the quoted --include suggestion (quotes, shell
+// expansion, the comma separator, glob syntax) or the terminal (control codes).
+const UNSAFE_SUGGESTION_CHARS = /["'`$\\,*?[\]{}()!;&|<>]/;
+const isUnsafeForSuggestion = (path: string): boolean =>
+  UNSAFE_SUGGESTION_CHARS.test(path) || [...path].some((char) => char.charCodeAt(0) < 0x20 || char === '\x7f');
+
 /**
  * A /tree/<ref>/<path> or /blob/<ref>/<path> URL still downloads and packs the
  * whole repository, so say so instead of silently dropping the path (#433).
@@ -245,8 +251,8 @@ const warnIgnoredRemoteSubpath = ({ subpath, remoteBranch }: ParsedRemoteValue, 
   }
   // Without a known ref, git-url-parse guesses the first segment is the ref, so a
   // branch like `feature/x` would leave `x/...` in the path. Do not name a path
-  // (or suggest an --include) that may be wrong.
-  if (!remoteBranch || !knownRefs.includes(remoteBranch)) {
+  // (or suggest an --include) that may be wrong, or one that cannot be echoed safely.
+  if (!remoteBranch || !knownRefs.includes(remoteBranch) || isUnsafeForSuggestion(subpath.path)) {
     logger.warn(
       'The path in the remote URL is ignored, and the whole repository will be packed.\n' +
         'To pack only part of it, use --include.',

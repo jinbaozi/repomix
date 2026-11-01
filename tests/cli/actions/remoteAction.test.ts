@@ -434,6 +434,32 @@ describe('remoteAction functions', () => {
       expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('x/a.ts'));
     });
 
+    test.each([
+      ['a quote', 'a%22b'],
+      ['a comma', 'a,b'],
+      ['a glob character', 'a*b'],
+      ['shell syntax', '%24(x)'],
+      ['a control character', 'a%1Bb'],
+    ])('does not echo a path containing %s', async (_label, segment) => {
+      vi.mocked(fs.copyFile).mockResolvedValue(undefined);
+
+      await runRemoteAction(`https://github.com/owner/repo/tree/main/${segment}`, {}, undefined, {
+        isGitInstalled: async () => true,
+        execGitShallowClone: vi.fn(async () => {}),
+        getRemoteRefs: async () => ['main'],
+        runDefaultAction: async () => createMockDefaultActionResult(),
+        downloadGitHubArchive: vi.fn(),
+        isGitHubRepository: vi.fn().mockReturnValue(false),
+        parseGitHubRepoInfo: vi.fn().mockReturnValue(null),
+        isArchiveDownloadSupported: vi.fn().mockReturnValue(false),
+        confirmRemoteConfigTrust: vi.fn(),
+      });
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('The path in the remote URL is ignored'));
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('--include "'));
+    });
+
     test('does not warn about a path for a plain branch URL', async () => {
       vi.mocked(fs.copyFile).mockResolvedValue(undefined);
 
