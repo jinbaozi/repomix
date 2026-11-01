@@ -486,6 +486,8 @@ export const getIgnoreFilePatterns = async (config: RepomixConfigMerged): Promis
   //
   // .gitignore files are handled by globby's gitignore option (not ignoreFiles)
   // to properly respect parent directory .gitignore files, matching Git's behavior.
+  //
+  // These ignore files apply whether or not customPatterns is defined in the config.
 
   if (config.ignore.useDotIgnore) {
     ignoreFilePatterns.push('**/.ignore');
