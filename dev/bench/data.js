@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793498829751,
+  "lastUpdate": 1793585148290,
   "repoUrl": "https://github.com/jinbaozi/repomix",
   "entries": {
     "Repomix Performance": [
@@ -90,6 +90,51 @@ window.BENCHMARK_DATA = {
             "range": "±28",
             "unit": "ms",
             "extra": "Median of 20 runs\nQ1: 1381ms, Q3: 1409ms\nAll times: 1366, 1368, 1374, 1375, 1377, 1381, 1389, 1393, 1393, 1394, 1394, 1394, 1399, 1403, 1406, 1409, 1412, 1412, 1414, 1426ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "koukun0120@gmail.com",
+            "name": "Kazuki Yamada",
+            "username": "yamadashy"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fe02ab760f14cc2b22123597cb46b37fc52144e7",
+          "message": "Merge pull request #1862 from lorenzozanee/fix/honor-parent-gitignore-for-directory-input\n\ntest(file): Cover parent .gitignore for directory input",
+          "timestamp": "2026-11-02T00:33:19+09:00",
+          "tree_id": "b8e5efd865beada18a6077ac1b2828de823b3367",
+          "url": "https://github.com/jinbaozi/repomix/commit/fe02ab760f14cc2b22123597cb46b37fc52144e7"
+        },
+        "date": 1793585147739,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Repomix Pack (macOS)",
+            "value": 1015,
+            "range": "±214",
+            "unit": "ms",
+            "extra": "Median of 30 runs\nQ1: 861ms, Q3: 1075ms\nAll times: 622, 640, 702, 736, 786, 791, 845, 861, 945, 958, 983, 996, 996, 1003, 1004, 1015, 1026, 1031, 1047, 1049, 1066, 1069, 1075, 1081, 1098, 1103, 1155, 1164, 1228, 1480ms"
+          },
+          {
+            "name": "Repomix Pack (Linux)",
+            "value": 1004,
+            "range": "±15",
+            "unit": "ms",
+            "extra": "Median of 20 runs\nQ1: 996ms, Q3: 1011ms\nAll times: 986, 993, 993, 995, 996, 996, 997, 998, 1002, 1004, 1004, 1008, 1009, 1010, 1011, 1011, 1022, 1025, 1038, 1148ms"
+          },
+          {
+            "name": "Repomix Pack (Windows)",
+            "value": 1389,
+            "range": "±29",
+            "unit": "ms",
+            "extra": "Median of 20 runs\nQ1: 1368ms, Q3: 1397ms\nAll times: 1352, 1355, 1361, 1366, 1367, 1368, 1368, 1385, 1386, 1387, 1389, 1392, 1396, 1397, 1397, 1397, 1398, 1399, 1402, 1402ms"
           }
         ]
       }
